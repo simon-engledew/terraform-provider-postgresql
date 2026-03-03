@@ -134,7 +134,7 @@ resource "postgresql_function" "function" {
     language = "plpgsql"
     body = <<-EOF
         BEGIN
-            RAISE EXCEPTION 'command % is disabled', tg_tag;
+            RAISE EXCEPTION 'command %% is disabled', tg_tag;
         END;
     EOF
 }

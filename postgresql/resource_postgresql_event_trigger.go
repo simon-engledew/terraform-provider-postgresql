@@ -242,10 +242,10 @@ func resourcePostgreSQLEventTriggerUpdate(db *DBConnection, d *schema.ResourceDa
 
 	statusSql := b.String()
 
-	// Table owner
+	// Event trigger owner
 	b = bytes.NewBufferString("ALTER EVENT TRIGGER ")
 	eventTriggerOwner := d.Get(eventTriggerOwnerAttr).(string)
-	fmt.Fprint(b, pq.QuoteIdentifier(eventTriggerName), " OWNER TO ", eventTriggerOwner)
+	fmt.Fprint(b, pq.QuoteIdentifier(eventTriggerName), " OWNER TO ", pq.QuoteIdentifier(eventTriggerOwner))
 
 	ownerSql := b.String()
 
