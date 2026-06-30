@@ -2,6 +2,7 @@ package postgresql
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -127,7 +128,18 @@ func createDatabase(db *DBConnection, d *schema.ResourceData) error {
 	currentUser := db.client.config.getDatabaseUsername()
 	owner := d.Get(dbOwnerAttr).(string)
 
-	var err error
+	// Pin all statements to a single connection. The GRANT below can change
+	// role membership in a way that breaks authentication for new connections,
+	// so CREATE DATABASE and the deferred REVOKE must run on this same
+	// already-authenticated connection rather than fresh ones from the pool.
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close() // registered first -> runs last (after the deferred revoke)
+	c := connQueryAble{conn: conn, ctx: ctx}
+
 	if owner != "" {
 		// Take a lock on db currentUser to avoid multiple database creation at the same time
 		// It can fail if they grant the same owner to current at the same time as it's not done in transaction.
@@ -142,13 +154,13 @@ func createDatabase(db *DBConnection, d *schema.ResourceData) error {
 
 		// Needed in order to set the owner of the db if the connection user is not a
 		// superuser
-		ownerGranted, err := grantRoleMembership(db, owner, currentUser)
+		ownerGranted, err := grantRoleMembership(c, owner, currentUser)
 		if err != nil {
 			return err
 		}
 		if ownerGranted {
 			defer func() {
-				_, err = revokeRoleMembership(db, owner, currentUser)
+				_, err = revokeRoleMembership(c, owner, currentUser)
 			}()
 		}
 	}
@@ -227,7 +239,7 @@ func createDatabase(db *DBConnection, d *schema.ResourceData) error {
 	}
 
 	sql := b.String()
-	if _, err := db.Exec(sql); err != nil {
+	if _, err := conn.ExecContext(ctx, sql); err != nil {
 		return fmt.Errorf("error creating database %q: %w", dbName, err)
 	}
 
