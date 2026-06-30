@@ -1,6 +1,7 @@
 package postgresql
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
@@ -42,6 +43,23 @@ type QueryAble interface {
 	Exec(query string, args ...any) (sql.Result, error)
 	Query(query string, args ...any) (*sql.Rows, error)
 	QueryRow(query string, args ...any) *sql.Row
+}
+
+// connQueryAble adapts a pinned *sql.Conn to QueryAble so a sequence of
+// statements (e.g. GRANT, CREATE DATABASE, REVOKE) shares one connection.
+type connQueryAble struct {
+	conn *sql.Conn
+	ctx  context.Context
+}
+
+func (c connQueryAble) Exec(query string, args ...any) (sql.Result, error) {
+	return c.conn.ExecContext(c.ctx, query, args...)
+}
+func (c connQueryAble) Query(query string, args ...any) (*sql.Rows, error) {
+	return c.conn.QueryContext(c.ctx, query, args...)
+}
+func (c connQueryAble) QueryRow(query string, args ...any) *sql.Row {
+	return c.conn.QueryRowContext(c.ctx, query, args...)
 }
 
 // pqQuoteLiteral returns a string literal safe for inclusion in a PostgreSQL
