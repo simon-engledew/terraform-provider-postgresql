@@ -30,11 +30,11 @@ const (
 
 func resourcePostgreSQLDatabase() *schema.Resource {
 	return &schema.Resource{
-		Create: PGResourceFunc(resourcePostgreSQLDatabaseCreate),
-		Read:   PGResourceFunc(resourcePostgreSQLDatabaseRead),
-		Update: PGResourceFunc(resourcePostgreSQLDatabaseUpdate),
-		Delete: PGResourceFunc(resourcePostgreSQLDatabaseDelete),
-		Exists: PGResourceExistsFunc(resourcePostgreSQLDatabaseExists),
+		CreateContext: PGResourceContextFunc(resourcePostgreSQLDatabaseCreate),
+		Read:          PGResourceFunc(resourcePostgreSQLDatabaseRead),
+		Update:        PGResourceFunc(resourcePostgreSQLDatabaseUpdate),
+		Delete:        PGResourceFunc(resourcePostgreSQLDatabaseDelete),
+		Exists:        PGResourceExistsFunc(resourcePostgreSQLDatabaseExists),
 		Importer: &schema.ResourceImporter{
 			StateContext: schema.ImportStatePassthroughContext,
 		},
@@ -114,8 +114,8 @@ func resourcePostgreSQLDatabase() *schema.Resource {
 	}
 }
 
-func resourcePostgreSQLDatabaseCreate(db *DBConnection, d *schema.ResourceData) error {
-	if err := createDatabase(db, d); err != nil {
+func resourcePostgreSQLDatabaseCreate(ctx context.Context, db *DBConnection, d *schema.ResourceData) error {
+	if err := createDatabase(ctx, db, d); err != nil {
 		return err
 	}
 
@@ -124,7 +124,7 @@ func resourcePostgreSQLDatabaseCreate(db *DBConnection, d *schema.ResourceData) 
 	return resourcePostgreSQLDatabaseReadImpl(db, d)
 }
 
-func createDatabase(db *DBConnection, d *schema.ResourceData) error {
+func createDatabase(ctx context.Context, db *DBConnection, d *schema.ResourceData) (err error) {
 	currentUser := db.client.config.getDatabaseUsername()
 	owner := d.Get(dbOwnerAttr).(string)
 
@@ -132,12 +132,13 @@ func createDatabase(db *DBConnection, d *schema.ResourceData) error {
 	// role membership in a way that breaks authentication for new connections,
 	// so CREATE DATABASE and the deferred REVOKE must run on this same
 	// already-authenticated connection rather than fresh ones from the pool.
-	ctx := context.Background()
 	conn, err := db.Conn(ctx)
 	if err != nil {
 		return err
 	}
-	defer conn.Close() // registered first -> runs last (after the deferred revoke)
+	defer func() {
+		err = errors.Join(err, conn.Close())
+	}() // registered first -> runs last (after the deferred revoke)
 	c := connQueryAble{conn: conn, ctx: ctx}
 
 	if owner != "" {

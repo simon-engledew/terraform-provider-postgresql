@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/lib/pq"
 )
@@ -22,6 +23,19 @@ func PGResourceFunc(fn func(*DBConnection, *schema.ResourceData) error) func(*sc
 		}
 
 		return fn(db, d)
+	}
+}
+
+func PGResourceContextFunc(fn func(context.Context, *DBConnection, *schema.ResourceData) error) func(context.Context, *schema.ResourceData, any) diag.Diagnostics {
+	return func(ctx context.Context, d *schema.ResourceData, meta any) diag.Diagnostics {
+		client := meta.(*Client)
+
+		db, err := client.Connect()
+		if err != nil {
+			return diag.FromErr(err)
+		}
+
+		return diag.FromErr(fn(ctx, db, d))
 	}
 }
 
@@ -61,6 +75,8 @@ func (c connQueryAble) Query(query string, args ...any) (*sql.Rows, error) {
 func (c connQueryAble) QueryRow(query string, args ...any) *sql.Row {
 	return c.conn.QueryRowContext(c.ctx, query, args...)
 }
+
+var _ QueryAble = connQueryAble{}
 
 // pqQuoteLiteral returns a string literal safe for inclusion in a PostgreSQL
 // query as a parameter.  The resulting string still needs to be wrapped in
